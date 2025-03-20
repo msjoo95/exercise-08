@@ -1,0 +1,167 @@
+---
+title: "exercise-8"
+author: "Minsoo Joo"
+date: "2025-03-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Step 1
+
+```{r}
+library(tidyverse)
+library(skimr)
+```
+
+```{r}
+f<-"https://raw.githubusercontent.com/difiore/ada-datasets/main/Street_et_al_2017.csv"
+d<-read_csv(f, col_names=TRUE)
+
+skim(d)
+```
+# Step 2
+
+```{r}
+plot_1 <- d %>% 
+  ggplot(aes(x=Group_size, y=ECV)) +
+  geom_point(shape = 21, colour = "red", fill = "black", size=1, na.rm = TRUE) +
+  ggtitle("ECV vs Group Size") +
+  theme_minimal()
+plot_2 <- d %>% 
+  ggplot(aes(x=Longevity, y=ECV)) +
+  geom_point(shape = 21, colour = "red", fill = "black", size=1, na.rm = TRUE) +
+  ggtitle("ECV vs Longevity") +
+  theme_minimal()
+plot_3 <- d %>% 
+  ggplot(aes(x=Weaning, y=ECV)) +
+  geom_point(shape = 21, colour = "red", fill = "black", size=1, na.rm = TRUE) +
+  ggtitle("ECV vs Weaning") +
+  theme_minimal()
+plot_4 <- d %>% 
+  ggplot(aes(x=Repro_lifespan, y=ECV)) +
+  geom_point(shape = 21, colour = "red", fill = "black", size=1, na.rm = TRUE) +
+  ggtitle("ECV vs Repro_lifespan") +
+  theme_minimal()
+library(cowplot)
+plot_grid(plot_1, plot_2, plot_3, plot_4)
+```
+
+# Step 3
+```{r}
+d_clean <- d %>% 
+  filter(!is.na(ECV) & !is.na(Group_size))
+(beta_1 <- cov(d_clean$Group_size, d_clean$ECV)/var(d_clean$Group_size))
+(beta_0 <- mean(d_clean$ECV) - beta_1*mean(d_clean$Group_size))
+```
+
+# Step 4
+I got the same results.
+```{r}
+m <- lm(ECV~Group_size, data=d_clean)
+summary(m)
+```
+
+# Step 5
+Yes, the regression coefficients differ among groups.
+The slope is highest for Platyrrhini (1.965), followed by Strepsirhini (1.841), and lowest for Catarrhini (1.146).
+Group size has marginal significant relationship with Catarrhini, while has high significant relationships with Platyrrhini and Strepsirrhini.
+To determine whether the differences are statistically significant, ANOVA or ANCOVA can be used.
+```{r}
+d_Catarrhini <- d %>% 
+  filter(Taxonomic_group=='Catarrhini') %>% 
+  filter(!is.na(ECV) & !is.na(Group_size))
+d_Platyrrhini <- d %>% 
+  filter(Taxonomic_group=='Platyrrhini') %>% 
+  filter(!is.na(ECV) & !is.na(Group_size))
+d_Strepsirhini <- d %>% 
+  filter(Taxonomic_group=='Strepsirhini') %>% 
+  filter(!is.na(ECV) & !is.na(Group_size))
+
+m1 <- lm(ECV~Group_size, data=d_Catarrhini)
+m2 <- lm(ECV~Group_size, data=d_Platyrrhini)
+m3 <- lm(ECV~Group_size, data=d_Strepsirhini)
+
+summary(m1)
+summary(m2)
+summary(m3)
+```
+
+# Step 6
+I included comments in the code.
+```{r}
+SSY <- sum((m$model$ECV - mean(m$model$ECV))^2) # y - y_mean
+SSR <- sum((m$fitted.values - mean(m$model$ECV))^2) # y_predicted - y_mean
+SSE <- sum((m$model$ECV - m$fitted.values)^2) # or SSE <- sum(m$residuals^2) -> y - y_predicted
+SSY == SSE + SSR # for checking
+(df_regression <- 1)  # p = 1 (the number of predictor variables)
+(df_error <- nrow(d_clean) - df_regression - 1)  # n - p - 1
+(df_y <- nrow(d_clean) - df_regression)  # n - p
+
+MSR <- SSR/df_regression  # mean variance explained by the regression equation
+MSE <- SSE/df_error  # mean remaining variance
+MSY <- SSY/df_y  # mean overall variance
+
+SSX <- sum((m$model$Group_size - mean(m$model$Group_size))^2)  # how much x variation there is
+(SEbeta1 <- sqrt(MSE/SSX)) # the standard error for the slope coefficient!!!
+
+beta_1 + qt(p = c(0.025, 0.975), df=df_error)*SEbeta1 # 95% of CI!!!
+
+t.calc <- beta_1 / SEbeta1 # t-statistic
+(p.calc = 2 * (1 - pt(abs(t.calc), df = nrow(m$model) - 2))) # p-value!!!!
+
+summary(m) # same results
+confint(m) # same results
+```
+
+# Step 7
+```{r}
+m <- lm(ECV ~ Group_size, data = d_clean)
+beta1 <- coef(m)[2] # Slope coefficient
+
+n_permutations <- 1000
+perm_beta1 <- numeric(n_permutations) # Store permuted slope values
+
+# permutation approach to calculate p value
+# We should permute the dependent variable (ECV).
+for (i in 1:n_permutations) {
+  permuted_ECV <- sample(d_clean$ECV)
+  perm_model <- lm(permuted_ECV ~ d_clean$Group_size)
+  perm_beta1[i] <- coef(perm_model)[2]
+}
+
+SE_permutation <- sd(perm_beta1) # standard error
+t_stat_perm <- beta1 / SE_permutation # t-statistic
+p_value <- 2 * (1 - pt(abs(t_stat_perm), df = nrow(d_clean) - 2)) # Calculate p-value (theory-based method)
+
+p_value
+```
+
+# Step 8
+The slope coefficient is different from zero, indicating that the relationship is likely to be significant.
+```{r}
+m <- lm(ECV ~ Group_size, data = d_clean)
+beta1 <- coef(m)[2]
+
+n_bootstrap <- 1000
+bootstrap_beta1 <- numeric(n_bootstrap)
+
+for (i in 1:n_bootstrap) {
+  boot_sample <- d_clean[sample(nrow(d_clean), replace = TRUE), ]
+  boot_model <- lm(ECV ~ Group_size, data = boot_sample)
+  bootstrap_beta1[i] <- coef(boot_model)[2]
+}
+#quantile method
+CI_quantile <- quantile(bootstrap_beta1, c(0.025, 0.975))
+CI_quantile
+
+#theory-based method
+SE_bootstrap <- sd(bootstrap_beta1)
+t_critical <- qt(0.975, df = nrow(d_clean) - 2)
+CI_theory <- beta1 + c(-1, 1) * t_critical * SE_bootstrap
+CI_theory
+```
+
+
